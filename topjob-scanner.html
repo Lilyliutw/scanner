@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>TopJob 條碼掃描器</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans TC', 'PingFang TC', sans-serif;
+  background: #0f0f17;
+  color: #f0f0f5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.app { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; min-height: 100vh; }
+
+/* Header */
+.header {
+  padding: 1.25rem 1.25rem 0.75rem;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid #1e1e30;
+}
+.logo {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: #2563eb; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.logo svg { width: 19px; height: 19px; fill: #fff; }
+.header-text h1 { font-size: 16px; font-weight: 600; }
+.header-text p { font-size: 12px; color: #555577; margin-top: 1px; }
+.sync-btn {
+  margin-left: auto; background: none; border: 1px solid #2a2a45;
+  color: #7777aa; border-radius: 8px; padding: 6px 10px;
+  font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px;
+  transition: all 0.15s;
+}
+.sync-btn:active { background: #1a1a2e; }
+.sync-btn svg { width: 13px; height: 13px; fill: currentColor; }
+
+/* Status bar */
+.status-bar {
+  padding: 0.5rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.db-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555577; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: #374151; flex-shrink: 0; }
+.dot.green { background: #22c55e; box-shadow: 0 0 6px #22c55e44; }
+.dot.loading { background: #f59e0b; animation: pulse 0.8s ease infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* Camera */
+.cam-wrap {
+  margin: 0 1rem;
+  border-radius: 18px;
+  overflow: hidden;
+  position: relative;
+  background: #080810;
+  aspect-ratio: 4/3;
+  border: 1px solid #1e1e30;
+}
+#video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cam-off {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; color: #333355; font-size: 13px; text-align: center; line-height: 1.5;
+}
+.cam-off svg { width: 44px; height: 44px; opacity: 0.35; }
+.scan-overlay {
+  position: absolute; inset: 0;
+  display: none; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.scan-overlay.active { display: flex; }
+.scan-frame { width: 200px; height: 120px; position: relative; }
+.c { position: absolute; width: 22px; height: 22px; border-color: #3b82f6; border-style: solid; }
+.c.tl { top:0;left:0; border-width:3px 0 0 3px; border-radius:4px 0 0 0; }
+.c.tr { top:0;right:0; border-width:3px 3px 0 0; border-radius:0 4px 0 0; }
+.c.bl { bottom:0;left:0; border-width:0 0 3px 3px; border-radius:0 0 0 4px; }
+.c.br { bottom:0;right:0; border-width:0 3px 3px 0; border-radius:0 0 4px 0; }
+.scan-line {
+  position: absolute; left: 4px; right: 4px; height: 2px;
+  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+  animation: scanAnim 1.8s ease-in-out infinite;
+}
+@keyframes scanAnim { 0%{top:0;opacity:0} 10%{opacity:1} 90%{opacity:1} 100%{top:100%;opacity:0} }
+
+/* Scan button */
+.btn-area { padding: 0.875rem 1rem 0; display: flex; gap: 8px; }
+.btn-scan {
+  flex: 1; padding: 14px;
+  background: #2563eb; border: none; border-radius: 14px;
+  color: #fff; font-size: 15px; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.15s; -webkit-tap-highlight-color: transparent;
+}
+.btn-scan:active { transform: scale(0.97); background: #1d4ed8; }
+.btn-scan.stop { background: #dc2626; }
+.btn-scan.stop:active { background: #b91c1c; }
+.btn-scan svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; }
+
+/* Result */
+.result-wrap {
+  margin: 0.875rem 1rem 0;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #1e1e30;
+  display: none;
+  animation: fadeUp 0.2s ease;
+}
+.result-wrap.show { display: block; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+.result-top {
+  padding: 12px 14px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid #1e1e30;
+}
+.tag {
+  font-size: 11px; font-weight: 600; padding: 3px 8px;
+  border-radius: 6px; text-transform: uppercase; letter-spacing: 0.4px;
+  flex-shrink: 0;
+}
+.tag.found { background: #052e16; color: #4ade80; }
+.tag.notfound { background: #3b0000; color: #f87171; }
+.tag.loading { background: #0c1a3d; color: #60a5fa; }
+.result-code { font-size: 12px; color: #44446a; font-family: monospace; margin-left: auto; }
+
+.result-body { padding: 16px 14px; background: #0d0d1a; }
+.product-name { font-size: 19px; font-weight: 700; line-height: 1.35; letter-spacing: -0.3px; }
+.product-sku {
+  margin-top: 8px; display: inline-flex; align-items: center; gap: 5px;
+  background: #111122; border: 1px solid #1e1e35;
+  border-radius: 7px; padding: 5px 10px;
+  font-size: 12px; color: #7777aa; font-family: monospace;
+}
+.product-sku svg { width: 12px; height: 12px; fill: currentColor; opacity: 0.6; }
+.not-found-msg { font-size: 14px; color: #f87171; font-weight: 500; }
+.not-found-sub { margin-top: 6px; font-size: 12px; color: #44446a; line-height: 1.5; }
+
+/* Manual */
+.manual-area {
+  padding: 0.75rem 1rem 0;
+  display: flex; gap: 8px;
+}
+.manual-area input {
+  flex: 1; background: #0d0d1a; border: 1px solid #1e1e30;
+  border-radius: 10px; padding: 10px 13px;
+  color: #f0f0f5; font-size: 14px; font-family: monospace;
+  outline: none; transition: border-color 0.15s;
+}
+.manual-area input:focus { border-color: #2563eb; }
+.manual-area input::placeholder { color: #333355; font-family: -apple-system,sans-serif; }
+.btn-go {
+  background: #111830; border: 1px solid #1e2a4a;
+  color: #60a5fa; border-radius: 10px; padding: 10px 14px;
+  font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.btn-go:active { transform: scale(0.97); }
+
+/* History */
+.hist-section { padding: 1rem 1rem 0; flex: 1; }
+.hist-title {
+  font-size: 11px; font-weight: 600; color: #44446a;
+  text-transform: uppercase; letter-spacing: 0.7px;
+  margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+}
+.hist-clear { background: none; border: none; color: #33334a; font-size: 11px; cursor: pointer; padding: 2px 4px; }
+.hist-list { display: flex; flex-direction: column; gap: 5px; }
+.hist-item {
+  background: #0d0d18; border: 1px solid #1a1a28;
+  border-radius: 10px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; transition: border-color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.hist-item:active { border-color: #2563eb; }
+.hist-icon {
+  width: 30px; height: 30px; border-radius: 7px;
+  background: #13131f; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.hist-icon svg { width: 14px; height: 14px; fill: #33334a; }
+.hist-info { flex: 1; min-width: 0; }
+.hist-name { font-size: 13px; font-weight: 500; color: #c0c0d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-sku { font-size: 11px; color: #44446a; font-family: monospace; }
+.hist-time { font-size: 11px; color: #33334a; flex-shrink: 0; }
+.empty { text-align: center; padding: 1.5rem; font-size: 13px; color: #33334a; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 1.5rem; left: 50%;
+  transform: translateX(-50%) translateY(60px);
+  background: #1e1e35; border: 1px solid #2a2a45;
+  color: #c0c0d8; padding: 9px 18px; border-radius: 100px;
+  font-size: 13px; font-weight: 500; white-space: nowrap;
+  transition: transform 0.25s ease; z-index: 99;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+/* Success flash */
+.cam-flash {
+  position: absolute; inset: 0;
+  background: #22c55e; opacity: 0;
+  pointer-events: none; transition: opacity 0.1s;
+}
+.cam-flash.flash { opacity: 0.18; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M2 4h3v16H2V4zm4 0h1v16H6V4zm2 0h3v16H8V4zm4 0h1v16h-1V4zm2 0h2v16h-2V4zm3 0h1v16h-1V4zm2 0h3v16h-3V4z"/></svg>
+    </div>
+    <div class="header-text">
+      <h1>條碼掃描器</h1>
+      <p>TopJob 商品查詢</p>
+    </div>
+    <button class="sync-btn" onclick="loadSheet()">
+      <svg viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      重新載入
+    </button>
+  </div>
+
+  <div class="status-bar">
+    <div class="db-status">
+      <div class="dot" id="dot"></div>
+      <span id="dbLabel">連接商品資料庫中…</span>
+    </div>
+  </div>
+
+  <div class="cam-wrap" id="camWrap">
+    <video id="video" playsinline autoplay muted></video>
+    <div class="cam-off" id="camOff">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M15 3h6v6M9 3H3v6M15 21h6v-6M9 21H3v-6"/>
+        <path d="M3 12h18" stroke-dasharray="3 3"/>
+      </svg>
+      點擊「開始掃描」<br>啟動相機
+    </div>
+    <div class="scan-overlay" id="scanOverlay">
+      <div class="scan-frame">
+        <div class="c tl"></div><div class="c tr"></div>
+        <div class="c bl"></div><div class="c br"></div>
+        <div class="scan-line"></div>
+      </div>
+    </div>
+    <div class="cam-flash" id="camFlash"></div>
+  </div>
+
+  <div class="btn-area">
+    <button class="btn-scan" id="scanBtn" onclick="toggleScan()">
+      <svg viewBox="0 0 24 24"><path d="M2 4h3v16H2V4zm19 0h-3v16h3V4zM9 4v16M12 4v16M15 4v16" stroke-linecap="round"/></svg>
+      開始掃描
+    </button>
+  </div>
+
+  <div class="manual-area">
+    <input id="manualInput" type="text" inputmode="numeric"
+      placeholder="或手動輸入 SKU 條碼號碼…"
+      onkeydown="if(event.key==='Enter')lookupCode(this.value.trim())">
+    <button class="btn-go" onclick="lookupCode(document.getElementById('manualInput').value.trim())">查詢</button>
+  </div>
+
+  <div class="result-wrap" id="resultWrap">
+    <div class="result-top">
+      <span class="tag" id="resultTag">找到</span>
+      <span class="result-code" id="resultCode"></span>
+    </div>
+    <div class="result-body" id="resultBody"></div>
+  </div>
+
+  <div class="hist-section">
+    <div class="hist-title">
+      掃描紀錄
+      <button class="hist-clear" onclick="clearHistory()">清除</button>
+    </div>
+    <div class="hist-list" id="histList"><div class="empty">尚無紀錄</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/@zxing/library@0.19.3/umd/index.min.js"></script>
+<script>
+// ── Config ──────────────────────────────────────────────
+const SHEET_ID = '1OQp81BtR8cLirSAFlrakffotBGSAwbldA0jjg2t9Tss';
+const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
+
+// ── State ────────────────────────────────────────────────
+let products = {};   // { sku: productName }
+let isScanning = false;
+let codeReader = null;
+let lastCode = '', lastTime = 0;
+let history = JSON.parse(localStorage.getItem('scanHist') || '[]');
+
+// ── Load Sheet ───────────────────────────────────────────
+async function loadSheet() {
+  setDot('loading', '載入商品資料中…');
+  try {
+    const res = await fetch(CSV_URL + '&t=' + Date.now());
+    if (!res.ok) throw new Error('fetch failed');
+    const text = await res.text();
+    parseCSV(text);
+    const count = Object.keys(products).length;
+    setDot('green', `已載入 ${count} 筆商品`);
+    toast(`✓ 已同步 ${count} 筆商品資料`);
+  } catch (e) {
+    setDot('', '無法載入資料（請確認 Sheet 已公開）');
+    toast('⚠ 資料載入失敗');
+  }
+}
+
+function parseCSV(text) {
+  products = {};
+  const lines = text.trim().split('\n');
+  // skip header row (row 1 = 產品名稱, SKU)
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (cols.length >= 2) {
+      const name = cols[0].trim();
+      const sku  = cols[1].trim();
+      if (name && sku) products[sku] = name;
+    }
+  }
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+    else cur += c;
+  }
+  result.push(cur);
+  return result;
+}
+
+function setDot(state, label) {
+  const d = document.getElementById('dot');
+  d.className = 'dot' + (state ? ' ' + state : '');
+  document.getElementById('dbLabel').textContent = label;
+}
+
+// ── Scanner ──────────────────────────────────────────────
+async function toggleScan() {
+  isScanning ? stopScan() : await startScan();
+}
+
+async function startScan() {
+  const btn = document.getElementById('scanBtn');
+  try {
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    const devices = await codeReader.listVideoInputDevices();
+    if (!devices.length) { toast('找不到相機'); return; }
+    const back = devices.find(d => /back|rear|environment/i.test(d.label));
+    const deviceId = back ? back.deviceId : devices[devices.length - 1].deviceId;
+
+    await codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+      if (result) onFound(result.getText());
+    });
+
+    isScanning = true;
+    document.getElementById('camOff').style.display = 'none';
+    document.getElementById('scanOverlay').classList.add('active');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> 停止掃描';
+    btn.classList.add('stop');
+  } catch (e) {
+    toast('請允許相機權限後再試');
+  }
+}
+
+function stopScan() {
+  if (codeReader) { codeReader.reset(); codeReader = null; }
+  isScanning = false;
+  document.getElementById('camOff').style.display = 'flex';
+  document.getElementById('scanOverlay').classList.remove('active');
+  const btn = document.getElementById('scanBtn');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M2 4h3v16H2V4zm19 0h-3v16h3V4zM9 4v16M12 4v16M15 4v16" stroke-linecap="round"/></svg> 開始掃描';
+  btn.classList.remove('stop');
+}
+
+function onFound(code) {
+  const now = Date.now();
+  if (code === lastCode && now - lastTime < 3000) return;
+  lastCode = code; lastTime = now;
+
+  // Flash
+  const flash = document.getElementById('camFlash');
+  flash.classList.add('flash');
+  setTimeout(() => flash.classList.remove('flash'), 150);
+
+  stopScan();
+  lookupCode(code);
+}
+
+// ── Lookup ───────────────────────────────────────────────
+function lookupCode(code) {
+  if (!code) { toast('請輸入條碼'); return; }
+  document.getElementById('manualInput').value = '';
+
+  const wrap = document.getElementById('resultWrap');
+  const tag  = document.getElementById('resultTag');
+  const body = document.getElementById('resultBody');
+  document.getElementById('resultCode').textContent = code;
+
+  const name = products[code];
+
+  if (!Object.keys(products).length) {
+    tag.className = 'tag loading'; tag.textContent = '載入中';
+    body.innerHTML = '<p style="color:#60a5fa;font-size:13px">商品資料尚未載入，請稍後再試</p>';
+  } else if (name) {
+    tag.className = 'tag found'; tag.textContent = '找到';
+    body.innerHTML = `
+      <div class="product-name">${name}</div>
+      <div class="product-sku">
+        <svg viewBox="0 0 24 24"><path d="M2 4h3v16H2V4zm4 0h1v16H6V4zm2 0h3v16H8V4zm4 0h1v16h-1V4zm2 0h2v16h-2V4zm3 0h1v16h-1V4zm2 0h3v16h-3V4z"/></svg>
+        ${code}
+      </div>`;
+    addHistory(code, name);
+  } else {
+    tag.className = 'tag notfound'; tag.textContent = '查無';
+    body.innerHTML = `
+      <div class="not-found-msg">查無此商品</div>
+      <div class="not-found-sub">SKU <code style="color:#7777aa">${code}</code> 不在商品清單中。<br>請確認條碼是否正確，或更新 Google Sheet 後重新載入。</div>`;
+    addHistory(code, '查無商品');
+  }
+
+  wrap.classList.add('show');
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── History ──────────────────────────────────────────────
+function addHistory(code, name) {
+  history = [{ code, name, t: Date.now() }, ...history.filter(h => h.code !== code)].slice(0, 30);
+  localStorage.setItem('scanHist', JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  const el = document.getElementById('histList');
+  if (!history.length) { el.innerHTML = '<div class="empty">尚無紀錄</div>'; return; }
+  el.innerHTML = history.map(h => `
+    <div class="hist-item" onclick="lookupCode('${h.code}')">
+      <div class="hist-icon">
+        <svg viewBox="0 0 24 24"><path d="M2 4h3v16H2V4zm4 0h1v16H6V4zm2 0h3v16H8V4zm4 0h1v16h-1V4zm2 0h2v16h-2V4zm3 0h1v16h-1V4zm2 0h3v16h-3V4z"/></svg>
+      </div>
+      <div class="hist-info">
+        <div class="hist-name">${h.name}</div>
+        <div class="hist-sku">${h.code}</div>
+      </div>
+      <div class="hist-time">${timeAgo(h.t)}</div>
+    </div>`).join('');
+}
+
+function clearHistory() {
+  history = [];
+  localStorage.setItem('scanHist', '[]');
+  renderHistory();
+}
+
+function timeAgo(ts) {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return '剛剛';
+  if (s < 3600) return Math.floor(s/60) + '分前';
+  if (s < 86400) return Math.floor(s/3600) + '時前';
+  return Math.floor(s/86400) + '天前';
+}
+
+// ── Toast ────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ── Init ─────────────────────────────────────────────────
+renderHistory();
+loadSheet();
+</script>
+</body>
+</html>
