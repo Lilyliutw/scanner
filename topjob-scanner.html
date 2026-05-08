@@ -285,7 +285,7 @@ body {
 <script>
 // ── Config ──────────────────────────────────────────────
 const SHEET_ID = '1OQp81BtR8cLirSAFlrakffotBGSAwbldA0jjg2t9Tss';
-const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
+const JSON_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=工作表1`;
 
 // ── State ────────────────────────────────────────────────
 let products = {};   // { sku: productName }
@@ -298,44 +298,33 @@ let history = JSON.parse(localStorage.getItem('scanHist') || '[]');
 async function loadSheet() {
   setDot('loading', '載入商品資料中…');
   try {
-    const res = await fetch(CSV_URL + '&t=' + Date.now());
+    const res = await fetch(JSON_URL + '&t=' + Date.now());
     if (!res.ok) throw new Error('fetch failed');
     const text = await res.text();
-    parseCSV(text);
+    // Google wraps response in /*O_o*/\ngoogle.visualization.Query.setResponse(...)
+    const json = JSON.parse(text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)/)[1]);
+    parseGviz(json);
     const count = Object.keys(products).length;
     setDot('green', `已載入 ${count} 筆商品`);
     toast(`✓ 已同步 ${count} 筆商品資料`);
   } catch (e) {
+    console.error(e);
     setDot('', '無法載入資料（請確認 Sheet 已公開）');
     toast('⚠ 資料載入失敗');
   }
 }
 
-function parseCSV(text) {
+function parseGviz(json) {
   products = {};
-  const lines = text.trim().split('\n');
-  // skip header row (row 1 = 產品名稱, SKU)
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i]);
-    if (cols.length >= 2) {
-      const name = cols[0].trim();
-      const sku  = cols[1].trim();
-      if (name && sku) products[sku] = name;
-    }
+  const rows = json.table.rows;
+  // row 0 is header, skip it
+  for (let i = 1; i < rows.length; i++) {
+    const cols = rows[i].c;
+    if (!cols || cols.length < 2) continue;
+    const name = cols[0] && cols[0].v ? String(cols[0].v).trim() : '';
+    const sku  = cols[1] && cols[1].v ? String(cols[1].v).trim() : '';
+    if (name && sku) products[sku] = name;
   }
-}
-
-function parseCSVLine(line) {
-  const result = [];
-  let cur = '', inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') { inQ = !inQ; }
-    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
-    else cur += c;
-  }
-  result.push(cur);
-  return result;
 }
 
 function setDot(state, label) {
